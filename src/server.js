@@ -4,6 +4,7 @@ import app from './app.js';
 import config, { envFileLoaded, envFilePath } from './config/env.js';
 import { closePool, ensureSchema } from './db/index.js';
 import { diagnoseDbError } from './utils/dbDiagnostics.js';
+import { attachLiveRelay } from './live/relay.js';
 
 const describeDb = (url) => {
   try {
@@ -41,6 +42,9 @@ const server = app.listen(config.port, async () => {
     if (hint) console.error(`   ↳ ${hint}`);
   }
 });
+
+// Real-time Gemini transcription over WebSocket (needs a long-running server).
+attachLiveRelay(server);
 
 // Render / other load balancers keep idle connections open longer than Node's
 // 5 s default; a shorter server timeout causes random 502s on reused sockets.

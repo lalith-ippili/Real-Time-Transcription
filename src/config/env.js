@@ -102,6 +102,10 @@ export const config = Object.freeze({
     // Lock the model/config into the ephemeral token (recommended).
     lockConfig: bool(process.env.GEMINI_LOCK_CONFIG, true),
     tokenTtlMinutes: int(process.env.GEMINI_TOKEN_TTL_MINUTES, 30),
+    // Live API WebSocket endpoint used by the server-side relay.
+    wsUrl:
+      process.env.GEMINI_WS_URL ||
+      'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent',
   },
 
   rateLimit: {

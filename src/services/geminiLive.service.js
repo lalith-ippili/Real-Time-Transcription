@@ -53,34 +53,57 @@ const getClient = (apiVersion) => {
   return clients.get(apiVersion);
 };
 
-/** Fields locked into the token (SDK format). */
+/**
+ * Fields locked into the token (SDK format). For the transcription model the
+ * transcription settings are left unlocked so the browser can pass an optional
+ * language hint (`languageCodes`) chosen by the user.
+ */
 const buildConstraintConfig = (model) =>
   isTranscribeModel(model)
-    ? {
-        responseModalities: ['TEXT'],
-        // Empty config = automatic language detection, which handles Hindi + English.
-        inputAudioTranscription: {},
-      }
+    ? { responseModalities: ['TEXT'] }
     : {
         responseModalities: ['AUDIO'],
         inputAudioTranscription: {},
         systemInstruction: { parts: [{ text: AGENT_INSTRUCTION }] },
       };
 
-/** The exact `setup` message the browser sends on the WebSocket (wire format). */
+/**
+ * The exact `setup` message the browser sends on the WebSocket (wire format).
+ * The transcription model gets only the documented fields (its server-side
+ * voice detection defaults are already tuned for dictation).
+ */
 const buildWireSetup = (model) => {
   const constraint = buildConstraintConfig(model);
   const setup = {
     model: `models/${model}`,
     generationConfig: { responseModalities: constraint.responseModalities },
-    inputAudioTranscription: constraint.inputAudioTranscription,
-    realtimeInputConfig: REALTIME_INPUT,
+    // Empty config = automatic language detection (Hindi + English).
+    inputAudioTranscription: {},
   };
-  if (constraint.systemInstruction) setup.systemInstruction = constraint.systemInstruction;
+  if (!isTranscribeModel(model)) {
+    setup.realtimeInputConfig = REALTIME_INPUT;
+    setup.systemInstruction = constraint.systemInstruction;
+  }
   return setup;
 };
 
 export const isGeminiConfigured = () => Boolean(config.gemini.apiKey);
+
+const LANGUAGE_CODES = { english: ['en-IN'], hindi: ['hi-IN'] };
+
+/**
+ * Server-built session setup for the WebSocket relay. The browser never
+ * chooses the model or config; it only picks the variant and a language hint.
+ */
+export const liveSetupFor = (variant = 'primary', language = null) => {
+  const model = variant === 'fallback' ? config.gemini.model : config.gemini.transcribeModel;
+  const setup = buildWireSetup(model);
+  const codes = LANGUAGE_CODES[language];
+  if (codes && isTranscribeModel(model)) {
+    setup.inputAudioTranscription = { ...setup.inputAudioTranscription, languageCodes: codes };
+  }
+  return { model, mode: isTranscribeModel(model) ? 'transcribe' : 'agent', setup };
+};
 
 export const liveModels = () => ({
   primary: config.gemini.transcribeModel,
@@ -117,6 +140,8 @@ export const createLiveToken = async ({ variant = 'primary', apiVersion } = {}) 
     }
     throw new HttpError(502, 'Could not create a Gemini Live session token');
   }
+
+  if (!config.isTest) console.log(`[gemini] token issued for ${model} (${version}, ${variant})`);
 
   return {
     token: token.name,

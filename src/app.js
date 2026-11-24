@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import { rateLimit } from 'express-rate-limit';
 import config from './config/env.js';
 import routes from './routes/index.js';
+import { buildOriginMatcher } from './utils/cors.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 
 const app = express();
@@ -16,24 +17,13 @@ app.disable('x-powered-by');
 // ── CORS ──────────────────────────────────────────────────────────────────
 // CORS_ORIGIN supports exact origins, "*" and wildcards such as
 // "https://*.netlify.app" (handy for Netlify deploy previews).
-const originMatchers = config.corsOrigins.map((pattern) => {
-  if (pattern === '*') return () => true;
-  if (!pattern.includes('*')) return (origin) => origin === pattern.replace(/\/$/, '');
-  const regex = new RegExp(
-    `^${pattern
-      .replace(/\/$/, '')
-      .split('*')
-      .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-      .join('[^/]+')}$`,
-  );
-  return (origin) => regex.test(origin);
-});
+const isAllowedOrigin = buildOriginMatcher(config.corsOrigins);
 
 app.use(
   cors({
     origin(origin, callback) {
       // Allow same-origin / server-to-server / curl requests (no Origin header).
-      if (!origin || originMatchers.some((match) => match(origin))) return callback(null, true);
+      if (!origin || isAllowedOrigin(origin)) return callback(null, true);
       return callback(null, false);
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -66,6 +56,7 @@ app.get('/', (_req, res) => {
     endpoints: [
       'GET    /api/health',
       'POST   /api/live/token',
+      'WS     /api/live/stream',
       'GET    /api/transcriptions',
       'GET    /api/transcriptions/stats',
       'GET    /api/transcriptions/:id',

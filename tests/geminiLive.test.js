@@ -33,11 +33,14 @@ test('primary variant uses the transcription model with TEXT output and no syste
   assert.deepEqual(s.setup.inputAudioTranscription, {});
   assert.equal(s.setup.systemInstruction, undefined);
   assert.equal(s.setup.model, 'models/gemini-3.5-transcribe-live');
+  assert.equal(s.setup.realtimeInputConfig, undefined); // only documented fields
 
   const req = calls.at(-1);
   assert.match(req.url, /\/v1beta\/auth_tokens$/);
   assert.equal(req.body.uses, 1);
   assert.equal(req.body.bidiGenerateContentSetup.model, 'models/gemini-3.5-transcribe-live');
+  // transcription settings stay unlocked so the browser can add a language hint
+  assert.ok(!String(req.body.fieldMask).includes('inputAudioTranscription'));
 });
 
 test('fallback variant uses the conversational model with AUDIO output and a silent-listener prompt', async () => {
@@ -47,5 +50,6 @@ test('fallback variant uses the conversational model with AUDIO output and a sil
   assert.equal(s.apiVersion, 'v1alpha');
   assert.deepEqual(s.setup.generationConfig.responseModalities, ['AUDIO']);
   assert.ok(s.setup.systemInstruction.parts[0].text.includes('dictation'));
+  assert.equal(s.setup.realtimeInputConfig.automaticActivityDetection.silenceDurationMs, 600);
   assert.match(calls.at(-1).url, /\/v1alpha\/auth_tokens$/);
 });

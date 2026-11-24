@@ -1,21 +1,27 @@
 import config from '../config/env.js';
 import { pingDatabase } from '../db/index.js';
 import { isGeminiConfigured } from '../services/geminiLive.service.js';
+import { diagnoseDbError } from '../utils/dbDiagnostics.js';
 
-// GET /api/health – used by the UI to show which engines are available.
+// GET /api/health – used by the UI (and Render's health check) to see what works.
 export const health = async (_req, res) => {
-  let database = { status: 'down' };
+  let database;
   try {
     const latencyMs = await pingDatabase();
     database = { status: 'up', latencyMs };
   } catch (err) {
-    database = { status: 'down', error: config.isProduction ? undefined : err.message };
+    // reason + hint are safe to expose (no secrets); the raw error only outside production.
+    const { reason, hint } = diagnoseDbError(err, config.db.url);
+    database = { status: 'down', reason, hint };
+    if (!config.isProduction) database.error = err.message;
   }
 
   const ok = database.status === 'up';
+  res.set('Cache-Control', 'no-store');
   res.status(ok ? 200 : 503).json({
     status: ok ? 'ok' : 'degraded',
     time: new Date().toISOString(),
+    uptimeSeconds: Math.round(process.uptime()),
     database,
     engines: {
       geminiLive: { available: isGeminiConfigured(), model: config.gemini.model },

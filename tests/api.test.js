@@ -126,6 +126,11 @@ describe('Transcriptions API', { skip: !TEST_DB && 'TEST_DATABASE_URL not set' }
     const counts = byWords.body.items.map((i) => i.wordCount);
     assert.deepEqual(counts, [...counts].sort((a, b) => a - b));
 
+    // A page past the end still reports the real total.
+    const beyond = await request(app).get('/api/transcriptions?limit=2&page=9').expect(200);
+    assert.equal(beyond.body.items.length, 0);
+    assert.equal(beyond.body.pagination.total, 5);
+
     await request(app).get('/api/transcriptions?sortBy=drop_table').expect(400);
     await request(app).get('/api/transcriptions?limit=1000').expect(400);
   });

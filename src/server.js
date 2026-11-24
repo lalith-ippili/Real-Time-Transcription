@@ -3,6 +3,7 @@
 import app from './app.js';
 import config, { envFileLoaded, envFilePath } from './config/env.js';
 import { closePool, ensureSchema } from './db/index.js';
+import { diagnoseDbError } from './utils/dbDiagnostics.js';
 
 const describeDb = (url) => {
   try {
@@ -11,27 +12,6 @@ const describeDb = (url) => {
   } catch {
     return 'an unparseable DATABASE_URL';
   }
-};
-
-// Hints for the most common local-setup mistakes.
-const dbHint = (err) => {
-  const host = (() => {
-    try {
-      return new URL(config.db.url).hostname;
-    } catch {
-      return '';
-    }
-  })();
-  if (['ENOTFOUND', 'ETIMEDOUT', 'ENETUNREACH', 'EHOSTUNREACH'].includes(err.code) && /^db\..+\.supabase\.co$/.test(host)) {
-    return 'The direct Supabase host is IPv6-only. Use the pooler string from Supabase → Connect → Transaction pooler.';
-  }
-  if (err.code === '28P01' || /password authentication failed/i.test(err.message)) {
-    return 'Wrong database password. If it contains @ # / ? or %, URL-encode it (for example @ → %40).';
-  }
-  if (/Tenant or user not found/i.test(err.message)) {
-    return 'For the pooler the user must be postgres.<project-ref> (e.g. postgres.jdcmwroecgvidfgcucvw).';
-  }
-  return null;
 };
 
 const server = app.listen(config.port, async () => {
@@ -57,10 +37,15 @@ const server = app.listen(config.port, async () => {
     console.log('✅ Database connected and schema is ready');
   } catch (err) {
     console.error(`❌ Database connection failed: ${err.message}`);
-    const hint = dbHint(err);
+    const { hint } = diagnoseDbError(err, config.db.url);
     if (hint) console.error(`   ↳ ${hint}`);
   }
 });
+
+// Render / other load balancers keep idle connections open longer than Node's
+// 5 s default; a shorter server timeout causes random 502s on reused sockets.
+server.keepAliveTimeout = 120_000;
+server.headersTimeout = 121_000;
 
 const shutdown = async (signal) => {
   console.log(`\n${signal} received – shutting down…`);

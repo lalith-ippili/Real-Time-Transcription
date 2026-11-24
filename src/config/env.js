@@ -86,7 +86,8 @@ export const config = Object.freeze({
   db: {
     url: databaseUrl,
     ssl: resolveSsl(),
-    poolMax: int(process.env.DB_POOL_MAX, 3),
+    // Serverless (Vercel) → few connections per instance; long-running server (Render) → more.
+    poolMax: int(process.env.DB_POOL_MAX, process.env.VERCEL ? 3 : 10),
     autoMigrate: bool(process.env.DB_AUTO_MIGRATE, true),
   },
 

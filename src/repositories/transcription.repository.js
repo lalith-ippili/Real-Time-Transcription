@@ -66,25 +66,31 @@ const buildFilters = ({ search, language, engine, favorite }) => {
   return { whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
 };
 
+/**
+ * One round-trip per page: COUNT(*) OVER() returns the total alongside the rows.
+ * (Only an out-of-range page needs a second, count-only query.)
+ */
 export const findMany = async ({ page, limit, sortBy, order, ...filters }) => {
   const { whereSql, params } = buildFilters(filters);
   const orderSql = `${SORTABLE[sortBy] || 'created_at'} ${order === 'asc' ? 'ASC' : 'DESC'}, id ASC`;
   const offset = (page - 1) * limit;
 
-  const listParams = [...params, limit, offset];
-  const [rows, count] = await Promise.all([
-    query(
-      `SELECT ${COLUMNS} FROM transcriptions ${whereSql}
-       ORDER BY ${orderSql}
-       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      listParams,
-    ),
-    query(`SELECT COUNT(*)::bigint AS total FROM transcriptions ${whereSql}`, params),
-  ]);
+  const { rows } = await query(
+    `SELECT ${COLUMNS}, COUNT(*) OVER()::bigint AS total_count
+     FROM transcriptions ${whereSql}
+     ORDER BY ${orderSql}
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit, offset],
+  );
 
-  const total = count.rows[0].total;
+  let total = rows[0]?.total_count ?? 0;
+  if (rows.length === 0 && page > 1) {
+    const count = await query(`SELECT COUNT(*)::bigint AS total FROM transcriptions ${whereSql}`, params);
+    total = count.rows[0].total;
+  }
+
   return {
-    items: rows.rows.map(toDto),
+    items: rows.map(toDto),
     pagination: {
       page,
       limit,
@@ -140,37 +146,37 @@ export const removeMany = async (ids) => {
   return rows.map((r) => r.id);
 };
 
+/** All dashboard numbers in a single query (one round-trip to the database). */
 export const getStats = async () => {
-  const [totals, byLanguage, byEngine, daily] = await Promise.all([
-    query(`
-      SELECT COUNT(*)::bigint                       AS total,
-             COALESCE(SUM(word_count), 0)::bigint   AS words,
-             COALESCE(SUM(duration_ms), 0)::bigint  AS duration_ms,
-             COUNT(*) FILTER (WHERE is_favorite)::bigint AS favorites
-      FROM transcriptions`),
-    query(`SELECT language AS key, COUNT(*)::bigint AS count
-           FROM transcriptions GROUP BY language ORDER BY count DESC`),
-    query(`SELECT engine AS key, COUNT(*)::bigint AS count
-           FROM transcriptions GROUP BY engine ORDER BY count DESC`),
-    query(`
-      SELECT to_char(d.day, 'YYYY-MM-DD') AS day, COUNT(t.id)::bigint AS count
-      FROM generate_series(
-             (CURRENT_DATE - INTERVAL '6 days')::date, CURRENT_DATE, INTERVAL '1 day'
-           ) AS d(day)
-      LEFT JOIN transcriptions t ON t.created_at::date = d.day::date
-      GROUP BY d.day ORDER BY d.day`),
-  ]);
+  const { rows } = await query(`
+    WITH t AS (
+      SELECT language, engine, is_favorite, word_count, duration_ms, created_at
+      FROM transcriptions
+    )
+    SELECT
+      (SELECT COUNT(*) FROM t)::bigint                              AS total,
+      (SELECT COALESCE(SUM(word_count), 0) FROM t)::bigint          AS words,
+      (SELECT COALESCE(SUM(duration_ms), 0) FROM t)::bigint         AS duration_ms,
+      (SELECT COUNT(*) FROM t WHERE is_favorite)::bigint            AS favorites,
+      COALESCE((SELECT json_object_agg(language, c)
+                FROM (SELECT language, COUNT(*) AS c FROM t GROUP BY language) l), '{}'::json) AS by_language,
+      COALESCE((SELECT json_object_agg(engine, c)
+                FROM (SELECT engine, COUNT(*) AS c FROM t GROUP BY engine) e), '{}'::json)     AS by_engine,
+      (SELECT json_agg(json_build_object('day', to_char(d.day, 'YYYY-MM-DD'), 'count', d.count) ORDER BY d.day)
+       FROM (
+         SELECT g.day, (SELECT COUNT(*) FROM t WHERE t.created_at::date = g.day::date) AS count
+         FROM generate_series((CURRENT_DATE - 6)::timestamp, CURRENT_DATE::timestamp, INTERVAL '1 day') AS g(day)
+       ) d)                                                         AS last7
+  `);
 
-  const t = totals.rows[0];
-  const toMap = (rows) => Object.fromEntries(rows.map((r) => [r.key, r.count]));
-
+  const r = rows[0];
   return {
-    total: t.total,
-    totalWords: t.words,
-    totalDurationMs: t.duration_ms,
-    favorites: t.favorites,
-    byLanguage: toMap(byLanguage.rows),
-    byEngine: toMap(byEngine.rows),
-    last7Days: daily.rows,
+    total: r.total,
+    totalWords: r.words,
+    totalDurationMs: r.duration_ms,
+    favorites: r.favorites,
+    byLanguage: r.by_language,
+    byEngine: r.by_engine,
+    last7Days: r.last7,
   };
 };

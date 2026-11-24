@@ -1,6 +1,7 @@
 import { ZodError } from 'zod';
 import config from '../config/env.js';
 import HttpError from '../utils/httpError.js';
+import { diagnoseDbError, isConnectionError } from '../utils/dbDiagnostics.js';
 
 export const notFound = (req, res) => {
   res.status(404).json({
@@ -39,15 +40,16 @@ export const errorHandler = (err, req, res, _next) => {
   } else if (err.type === 'entity.too.large') {
     status = 413;
     message = 'Request body is too large';
+  } else if (isConnectionError(err) || (err.code && CONNECTION_ERRORS.has(err.code))) {
+    const { hint } = diagnoseDbError(err, config.db.url);
+    status = 503;
+    message = hint ? `Database is unreachable. ${hint}` : 'Database is unreachable';
   } else if (err.code && PG_ERRORS[err.code]) {
     [status, message] = PG_ERRORS[err.code];
-  } else if (err.code && CONNECTION_ERRORS.has(err.code)) {
-    status = 503;
-    message = 'Database is unreachable';
   }
 
   if (status >= 500) {
-    if (err instanceof HttpError) {
+    if (err instanceof HttpError || status === 503) {
       console.warn(`[warn] ${req.method} ${req.originalUrl} → ${status}: ${message}`);
     } else {
       console.error(`[error] ${req.method} ${req.originalUrl}:`, err);

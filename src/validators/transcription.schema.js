@@ -70,6 +70,11 @@ export const bulkDeleteSchema = z.object({
   ids: z.array(z.uuid()).min(1, 'ids must contain at least one id').max(100),
 });
 
-// Gemini auto-detects languages, so the token request takes no options today.
-// Unknown keys are rejected to keep the contract explicit.
-export const liveTokenSchema = z.object({}).strict();
+// The browser may ask for the fallback model or the other API version when the
+// first attempt fails. Unknown keys are rejected to keep the contract explicit.
+export const liveTokenSchema = z
+  .object({
+    variant: z.enum(['primary', 'fallback']).default('primary'),
+    apiVersion: z.enum(['v1beta', 'v1alpha']).optional(),
+  })
+  .strict();

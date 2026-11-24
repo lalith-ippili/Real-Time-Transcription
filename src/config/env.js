@@ -93,10 +93,13 @@ export const config = Object.freeze({
 
   gemini: {
     apiKey: process.env.GEMINI_API_KEY || '',
+    // Primary: Google's dedicated real-time speech-to-text model (interim + final text).
+    transcribeModel: process.env.GEMINI_TRANSCRIBE_MODEL || 'gemini-3.5-transcribe-live',
+    // Fallback: conversational Live model, used automatically if the primary is unavailable.
     model: process.env.GEMINI_LIVE_MODEL || 'gemini-3.1-flash-live-preview',
-    // The JS SDK documents ephemeral-token support on v1alpha.
-    apiVersion: process.env.GEMINI_API_VERSION || 'v1alpha',
-    // Lock the model/system prompt into the ephemeral token (recommended).
+    // Ephemeral tokens are documented for v1beta; the browser retries v1alpha if needed.
+    apiVersion: process.env.GEMINI_API_VERSION || 'v1beta',
+    // Lock the model/config into the ephemeral token (recommended).
     lockConfig: bool(process.env.GEMINI_LOCK_CONFIG, true),
     tokenTtlMinutes: int(process.env.GEMINI_TOKEN_TTL_MINUTES, 30),
   },
@@ -104,7 +107,7 @@ export const config = Object.freeze({
   rateLimit: {
     windowMs: 60_000,
     apiMax: int(process.env.RATE_LIMIT_PER_MINUTE, 120),
-    tokenMax: int(process.env.TOKEN_RATE_LIMIT_PER_MINUTE, 10),
+    tokenMax: int(process.env.TOKEN_RATE_LIMIT_PER_MINUTE, 30),
   },
 });
 

@@ -19,7 +19,7 @@ const server = app.listen(config.port, async () => {
   console.log(envFileLoaded ? `📄 Loaded ${envFilePath}` : `⚠️  No .env file found at ${envFilePath}`);
   console.log(
     config.gemini.apiKey
-      ? `🎙️  Gemini Live enabled (${config.gemini.model})`
+      ? `🎙️  Gemini Live enabled (${config.gemini.transcribeModel}, fallback ${config.gemini.model}, ${config.gemini.apiVersion})`
       : '🎙️  Gemini Live disabled – set GEMINI_API_KEY to enable it',
   );
   console.log(`🌐 CORS allowed origins: ${config.corsOrigins.join(', ')}`);

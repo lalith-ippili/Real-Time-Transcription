@@ -1,6 +1,6 @@
 import config from '../config/env.js';
 import { pingDatabase } from '../db/index.js';
-import { isGeminiConfigured } from '../services/geminiLive.service.js';
+import { isGeminiConfigured, liveModels } from '../services/geminiLive.service.js';
 import { diagnoseDbError } from '../utils/dbDiagnostics.js';
 
 // GET /api/health – used by the UI (and Render's health check) to see what works.
@@ -24,7 +24,11 @@ export const health = async (_req, res) => {
     uptimeSeconds: Math.round(process.uptime()),
     database,
     engines: {
-      geminiLive: { available: isGeminiConfigured(), model: config.gemini.model },
+      geminiLive: {
+        available: isGeminiConfigured(),
+        model: liveModels().primary,
+        fallbackModel: liveModels().fallback,
+      },
       whisper: { available: true, note: 'runs in the browser (open-source, on-device)' },
       webSpeech: { available: true, note: 'depends on browser support' },
     },

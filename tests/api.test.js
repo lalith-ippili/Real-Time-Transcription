@@ -161,6 +161,9 @@ describe('Transcriptions API', { skip: !TEST_DB && 'TEST_DATABASE_URL not set' }
     const res = await request(app).post('/api/live/token').send({}).expect(503);
     assert.match(res.body.error.message, /GEMINI_API_KEY/);
     await request(app).post('/api/live/token').send({ unexpected: true }).expect(400);
+    await request(app).post('/api/live/token').send({ variant: 'nope' }).expect(400);
+    await request(app).post('/api/live/token').send({ apiVersion: 'v9' }).expect(400);
+    await request(app).post('/api/live/token').send({ variant: 'fallback', apiVersion: 'v1alpha' }).expect(503);
   });
 
   test('unknown routes return JSON 404', async () => {

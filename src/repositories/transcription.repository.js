@@ -1,3 +1,5 @@
+// all SQL lives here (parameterised)
+
 import { query } from '../db/index.js';
 import { escapeLike } from '../utils/text.js';
 
